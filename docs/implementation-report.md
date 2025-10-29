@@ -49,6 +49,7 @@
 - ✅ 適切なエラーハンドリング
 - ✅ コードレビューのフィードバック対応
 - ✅ セキュリティスキャン合格（CodeQL）
+- ✅ ScriptProcessorNode deprecation警告の解消（requestAnimationFrameベースの実装に移行）
 
 ## 技術スタック
 
@@ -63,6 +64,7 @@
 
 ### Web API
 - **Web Audio API**: マイク音声の取得と解析
+  - requestAnimationFrameベースの音声処理ループを使用（ScriptProcessorNodeの代替）
 - **MediaDevices API**: マイクへのアクセス制御
 - **LocalStorage API**: データの永続化
 
@@ -183,6 +185,25 @@ CodeQL Analysis Result:
 3. **ハードコード値の定数化**
    - 話者識別の閾値30を定数`SPEAKER_FREQUENCY_DIFF_THRESHOLD`として定義
    - 保守性と可読性の向上
+
+### バグ修正
+
+**Issue #1: マイク音声取得エラーとdeprecation警告**
+- **問題**: ScriptProcessorNodeの使用により deprecation警告が発生し、一部ブラウザでマイク音声が正しく取得できない
+- **原因**: `createScriptProcessor()`はWeb Audio APIで非推奨となっており、将来的に削除予定
+- **解決策**: requestAnimationFrameベースの音声処理ループに移行
+- **実装日**: 2025年10月29日
+- **影響範囲**: 
+  - `initializeMicrophone()`: ScriptProcessorNodeの生成を削除、analyserのみを使用
+  - `startAudioProcessing()`: requestAnimationFrameを使用した音声処理ループを新規実装
+  - `stopMicrophone()`: アニメーションフレームのキャンセル処理を追加
+  - `startVoiceRegistration()`: `audioProcessCallback`変数を使用したコールバックパターンに変更
+  - `startMeeting()`: 同上
+- **改善効果**:
+  - ✅ Deprecation警告の完全解消
+  - ✅ より安定したマイク音声の取得
+  - ✅ ブラウザ互換性の向上
+  - ✅ エコー防止（destinationへの接続を削除）
 
 ### ログ出力の充実
 
