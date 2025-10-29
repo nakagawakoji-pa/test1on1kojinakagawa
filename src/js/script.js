@@ -271,12 +271,12 @@ function checkRegistrationStatus() {
 /**
  * 声の登録開始
  * 
- * 注意: Azure Speech ServiceのSpeaker Recognition APIは、2023年時点で
- * ブラウザJavaScript SDKでの音声プロファイル作成がサポートされていない可能性があります。
- * ここでは、簡易的な実装として、音声認識による話者識別の準備を行います。
+ * Azure Speech Service の ConversationTranscriber を使用して、
+ * 上司の声を録音し、音声認識結果とスピーカーIDをログ出力します。
  */
 async function startVoiceRegistration() {
     console.log('🎙️ 声の登録を開始します...');
+    console.log('📌 [デバッグ] Azure Speech Service のダイアライゼーション機能を使用します');
     
     if (isRegistering) {
         console.warn('⚠️ すでに登録中です');
@@ -289,6 +289,13 @@ async function startVoiceRegistration() {
         return;
     }
     
+    // Azure Speech Configの確認
+    if (!speechConfig) {
+        console.error('❌ Azure Speech Configが初期化されていません');
+        alert('Azure設定を確認してください。');
+        return;
+    }
+    
     try {
         isRegistering = true;
         
@@ -297,26 +304,121 @@ async function startVoiceRegistration() {
         document.getElementById('btn-stop-registration').classList.remove('hidden');
         document.getElementById('registration-status').classList.remove('hidden');
         document.querySelector('#registration-status p').textContent = 
-            '音声プロファイルを作成中... しばらくお待ちください。';
+            '上司の声を録音しています... 自然な声でお話しください。';
         
-        // 簡易実装: 音声プロファイルIDを生成（実際のAPIを使用する場合は、ここで音声サンプルを送信）
-        // Azure Speaker Recognition APIを使用する場合は、REST APIを直接呼び出す必要があります
+        console.log('🔄 ConversationTranscriber を使用して上司の声を録音します...');
+        console.log('📌 [デバッグ] これにより Azure Speech Service のダイアライゼーション機能が使用されます');
         
-        // シミュレーション: 10秒間待機
-        console.log('🔄 音声プロファイルを作成中...');
+        // マイク入力の設定
+        audioConfig = SpeechSDK.AudioConfig.fromDefaultMicrophoneInput();
+        console.log('✅ マイク入力を設定しました');
         
-        let countdown = 10;
-        const statusElement = document.querySelector('#registration-status p');
+        // 会話トランスクライバーの作成（ダイアライゼーション機能を使用）
+        const registrationTranscriber = new SpeechSDK.ConversationTranscriber(speechConfig, audioConfig);
+        console.log('✅ ConversationTranscriber を作成しました（ダイアライゼーション有効）');
         
-        const countdownInterval = setInterval(() => {
-            countdown--;
-            statusElement.textContent = `録音中... 残り ${countdown} 秒`;
-            
-            if (countdown <= 0) {
-                clearInterval(countdownInterval);
-                completeVoiceRegistration();
+        // 登録用の変数
+        let registrationSpeakerId = null;
+        let recognitionCount = 0;
+        let registrationTimer = null;
+        
+        // 認識中のイベント
+        registrationTranscriber.transcribing = (s, e) => {
+            const speakerId = e.result.speakerId || 'Unknown';
+            const text = e.result.text;
+            console.log('🗣️ [音声認識中]', {
+                speakerId: speakerId,
+                認識テキスト: text,
+                状態: '認識中'
+            });
+        };
+        
+        // 認識完了イベント
+        registrationTranscriber.transcribed = (s, e) => {
+            if (e.result.reason === SpeechSDK.ResultReason.RecognizedSpeech) {
+                const speakerId = e.result.speakerId || 'Unknown';
+                const text = e.result.text;
+                const duration = e.result.duration / 10000; // 100ナノ秒単位をミリ秒に変換
+                
+                recognitionCount++;
+                
+                console.log('✅ ========== 音声認識結果 ==========');
+                console.log('📌 [結果 #' + recognitionCount + ']', {
+                    スピーカーID: speakerId,
+                    認識テキスト: text,
+                    発話時間: duration + 'ms',
+                    タイムスタンプ: new Date().toLocaleTimeString('ja-JP')
+                });
+                console.log('📌 [ダイアライゼーション] Azure Speech Service が話者を識別しました');
+                console.log('=====================================');
+                
+                // 最初の話者を上司として記録
+                if (!registrationSpeakerId && speakerId !== 'Unknown') {
+                    registrationSpeakerId = speakerId;
+                    console.log('👤 [上司の声を登録] スピーカーID:', registrationSpeakerId);
+                }
             }
-        }, 1000);
+        };
+        
+        // キャンセルイベント
+        registrationTranscriber.canceled = (s, e) => {
+            console.error('❌ 認識がキャンセルされました:', e.reason);
+            if (e.reason === SpeechSDK.CancellationReason.Error) {
+                console.error('❌ エラー詳細:', e.errorDetails);
+            }
+        };
+        
+        // セッション停止イベント
+        registrationTranscriber.sessionStopped = (s, e) => {
+            console.log('⏹️ 登録セッションが停止しました');
+        };
+        
+        // 認識開始
+        registrationTranscriber.startTranscribingAsync(
+            () => {
+                console.log('✅ 上司の声の録音を開始しました');
+                console.log('📌 [ダイアライゼーション] Azure Speech Service が話者を自動識別します');
+                
+                // 10秒後に自動停止
+                let countdown = 10;
+                const statusElement = document.querySelector('#registration-status p');
+                
+                registrationTimer = setInterval(() => {
+                    countdown--;
+                    statusElement.textContent = `録音中... 残り ${countdown} 秒（話し続けてください）`;
+                    
+                    if (countdown <= 0) {
+                        clearInterval(registrationTimer);
+                        
+                        // 認識停止
+                        registrationTranscriber.stopTranscribingAsync(
+                            () => {
+                                console.log('✅ 録音を停止しました');
+                                console.log('📊 [統計] 認識された発話数:', recognitionCount);
+                                
+                                registrationTranscriber.close();
+                                
+                                // 登録完了処理
+                                completeVoiceRegistration(registrationSpeakerId);
+                            },
+                            (error) => {
+                                console.error('❌ 認識停止に失敗しました:', error);
+                                isRegistering = false;
+                                document.getElementById('btn-start-registration').classList.remove('hidden');
+                                document.getElementById('btn-stop-registration').classList.add('hidden');
+                            }
+                        );
+                    }
+                }, 1000);
+            },
+            (error) => {
+                console.error('❌ 認識開始に失敗しました:', error);
+                alert('音声認識の開始に失敗しました: ' + error);
+                isRegistering = false;
+                document.getElementById('btn-start-registration').classList.remove('hidden');
+                document.getElementById('btn-stop-registration').classList.add('hidden');
+            }
+        );
         
     } catch (error) {
         console.error('❌ 声の登録開始に失敗しました:', error);
@@ -329,23 +431,31 @@ async function startVoiceRegistration() {
 
 /**
  * 声の登録完了
+ * @param {string} speakerId - Azure Speech Service が識別したスピーカーID
  */
-function completeVoiceRegistration() {
+function completeVoiceRegistration(speakerId) {
     console.log('✅ 声の登録を完了します...');
     
-    // 音声プロファイルIDを生成（実際のAPIの場合は、APIから返されたIDを使用）
-    const voiceProfileId = 'profile_' + Date.now();
+    // スピーカーIDをプロファイルIDとして保存
+    // Azure Speech Service のダイアライゼーションで識別されたIDを使用
+    const voiceProfileId = speakerId || 'profile_' + Date.now();
     const timestamp = Date.now();
     
     // LocalStorageに保存
     localStorage.setItem(STORAGE_KEY_VOICE_PROFILE_ID, voiceProfileId);
     localStorage.setItem(STORAGE_KEY_VOICE_PROFILE_DATE, timestamp.toString());
     
-    console.log('✅ 上司の声を登録しました:', { voiceProfileId, timestamp });
+    console.log('✅ ========== 上司の声の登録完了 ==========');
+    console.log('📌 [登録情報]', {
+        保存されたスピーカーID: voiceProfileId,
+        登録日時: new Date(timestamp).toLocaleString('ja-JP'),
+        Azure_ダイアライゼーション使用: 'はい'
+    });
+    console.log('=========================================');
     
     // UI更新
     document.querySelector('#registration-status p').textContent = 
-        '✓ 登録が完了しました';
+        '✓ 登録が完了しました（スピーカーID: ' + voiceProfileId + '）';
     
     setTimeout(() => {
         isRegistering = false;
@@ -353,7 +463,7 @@ function completeVoiceRegistration() {
         document.getElementById('btn-start-registration').classList.remove('hidden');
         document.getElementById('btn-stop-registration').classList.add('hidden');
         checkRegistrationStatus();
-    }, 2000);
+    }, 3000);
 }
 
 /**
@@ -396,6 +506,12 @@ function clearVoiceRegistration() {
  */
 async function startMeeting() {
     console.log('🎬 1on1測定を開始します...');
+    console.log('📌 ========== Azure Speech Service 設定情報 ==========');
+    console.log('📌 [確認] ConversationTranscriber を使用');
+    console.log('📌 [確認] ダイアライゼーション機能: 有効');
+    console.log('📌 [確認] 話者の自動識別: 有効');
+    console.log('📌 [注意] 登録された音声プロファイルとの照合: 未実装');
+    console.log('================================================');
     
     if (isMeeting) {
         console.warn('⚠️ すでに測定中です');
@@ -424,6 +540,7 @@ async function startMeeting() {
         conversationTranscriber = new SpeechSDK.ConversationTranscriber(speechConfig, audioConfig);
         
         console.log('✅ ConversationTranscriberを作成しました');
+        console.log('📌 [ダイアライゼーション] Azure Speech Service が会話中の話者を自動識別します');
         
         // 変数の初期化
         isMeeting = true;
@@ -449,6 +566,7 @@ async function startMeeting() {
         conversationTranscriber.startTranscribingAsync(
             () => {
                 console.log('✅ 会話の認識を開始しました');
+                console.log('📌 [ダイアライゼーション] 話者の識別が開始されました');
             },
             (error) => {
                 console.error('❌ 認識開始に失敗しました:', error);
@@ -469,11 +587,15 @@ async function startMeeting() {
  */
 function setupTranscriberEventHandlers() {
     console.log('🎧 イベントハンドラーを設定しています...');
+    console.log('📌 [ダイアライゼーション] Azure Speech Service の ConversationTranscriber を使用');
     
     // 認識中のイベント
     conversationTranscriber.transcribing = (s, e) => {
         const speakerId = e.result.speakerId || 'Unknown';
-        console.log('🗣️ 認識中:', speakerId, e.result.text);
+        console.log('🗣️ [1on1測定] 認識中:', {
+            スピーカーID: speakerId,
+            認識テキスト: e.result.text
+        });
     };
     
     // 認識完了イベント
@@ -483,16 +605,25 @@ function setupTranscriberEventHandlers() {
             const text = e.result.text;
             const duration = e.result.duration / 10000; // 100ナノ秒単位をミリ秒に変換
             
-            console.log('✅ 認識完了:', {
-                speakerId,
-                text,
-                duration: duration + 'ms'
+            console.log('✅ ========== 1on1測定 - 音声認識結果 ==========');
+            console.log('📌 [認識結果]', {
+                スピーカーID: speakerId,
+                認識テキスト: text,
+                発話時間: duration + 'ms',
+                タイムスタンプ: new Date().toLocaleTimeString('ja-JP')
             });
             
             // 話者の識別（簡易版）
             // 実際には、登録されたvoiceProfileIdと比較する必要がありますが、
             // ここでは最初に認識された話者を上司、それ以降を部下として扱います
             const isManager = identifySpeaker(speakerId);
+            
+            console.log('📌 [話者識別結果]', {
+                スピーカーID: speakerId,
+                識別結果: isManager ? '上司' : '部下',
+                登録されたプロファイルID: localStorage.getItem(STORAGE_KEY_VOICE_PROFILE_ID)
+            });
+            console.log('============================================');
             
             if (isManager) {
                 managerSpeakingTime += duration;
@@ -534,18 +665,32 @@ function setupTranscriberEventHandlers() {
 /**
  * 話者の識別
  * 簡易実装: 最初に話した人を上司とみなす
+ * 
+ * 注意: Azure Speech Service の ConversationTranscriber は話者をダイアライゼーションで識別しますが、
+ * 登録された音声プロファイルとの照合は行いません。より高度な話者識別には
+ * Azure Speaker Recognition API を使用する必要があります。
  */
 let firstSpeaker = null;
 
 function identifySpeaker(speakerId) {
+    console.log('🔍 [話者識別処理] スピーカーID:', speakerId);
+    
     if (!firstSpeaker) {
         firstSpeaker = speakerId;
-        console.log('📝 最初の話者を上司として登録:', speakerId);
+        console.log('📝 [話者識別] 最初の話者を上司として登録:', speakerId);
+        console.log('📌 [ダイアライゼーション] Azure Speech Service が自動的に話者を識別しました');
+        console.log('ℹ️ [注意] この実装では登録された音声プロファイルとの照合は行っていません');
+        console.log('ℹ️ [注意] より高度な話者識別には Azure Speaker Recognition API の使用が必要です');
         return true; // 上司
     }
     
     const isManager = (speakerId === firstSpeaker);
-    console.log('🎯 話者識別:', { speakerId, isManager: isManager ? '上司' : '部下' });
+    console.log('🎯 [話者識別結果]', { 
+        スピーカーID: speakerId, 
+        判定: isManager ? '上司' : '部下',
+        最初の話者_上司: firstSpeaker,
+        一致: isManager ? 'はい' : 'いいえ'
+    });
     return isManager;
 }
 
