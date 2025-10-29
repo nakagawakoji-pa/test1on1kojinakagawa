@@ -11,6 +11,7 @@ console.log('🚀 1on1 発話比率測定アプリを起動します...');
 let audioContext = null;
 let analyser = null;
 let microphone = null;
+let microphoneStream = null; // マイクストリームの参照を保持
 let javascriptNode = null;
 let animationId = null;
 
@@ -30,14 +31,14 @@ let meetingTimerInterval = null;
 
 // 音響特徴量の閾値
 const VOICE_THRESHOLD = 30; // 発話判定の音量閾値
-const MANAGER_FREQUENCY_THRESHOLD = 150; // 上司の声と判定する周波数特性（仮）
+const SPEAKER_FREQUENCY_DIFF_THRESHOLD = 30; // 話者識別の周波数差分閾値
 
 // LocalStorageキー
 const STORAGE_KEY_VOICE_PROFILE = 'voice_profile_manager';
 
 console.log('📋 設定値:', {
     VOICE_THRESHOLD,
-    MANAGER_FREQUENCY_THRESHOLD,
+    SPEAKER_FREQUENCY_DIFF_THRESHOLD,
     REGISTRATION_DURATION
 });
 
@@ -187,6 +188,8 @@ async function initializeMicrophone() {
         
         console.log('✅ マイクのアクセスが許可されました', stream);
         
+        // ストリームの参照を保持
+        microphoneStream = stream;
         microphone = audioContext.createMediaStreamSource(stream);
         analyser = audioContext.createAnalyser();
         analyser.fftSize = 2048;
@@ -214,14 +217,15 @@ async function initializeMicrophone() {
 /**
  * マイクストリームの停止
  */
-function stopMicrophone(stream) {
+function stopMicrophone() {
     console.log('🛑 マイクストリームを停止しています...');
     
-    if (stream) {
-        stream.getTracks().forEach(track => {
+    if (microphoneStream) {
+        microphoneStream.getTracks().forEach(track => {
             track.stop();
             console.log('✅ トラックを停止しました:', track);
         });
+        microphoneStream = null;
     }
     
     if (javascriptNode) {
@@ -372,8 +376,7 @@ function stopVoiceRegistration() {
     isRegistering = false;
     
     // マイクストリームの停止
-    const stream = microphone?.mediaStream;
-    stopMicrophone(stream);
+    stopMicrophone();
     
     // データの保存
     if (registrationData.length > 0) {
@@ -443,7 +446,7 @@ function identifySpeaker(volume, frequency) {
     
     // 閾値による判定（簡易版）
     // より精度を上げるには機械学習などを使用
-    const isManager = frequencyDiff < 30; // 30は仮の閾値
+    const isManager = frequencyDiff < SPEAKER_FREQUENCY_DIFF_THRESHOLD;
     
     console.log('🎯 話者識別:', { 
         volume: volume.toFixed(2), 
@@ -559,8 +562,7 @@ function stopMeeting() {
     }
     
     // マイクストリームの停止
-    const stream = microphone?.mediaStream;
-    stopMicrophone(stream);
+    stopMicrophone();
     
     // UI更新
     document.getElementById('meeting-active').classList.add('hidden');
