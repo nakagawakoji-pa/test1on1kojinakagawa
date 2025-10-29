@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>1on1 発話比率測定アプリ</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        /* カスタムスタイル */
+        .recording-indicator {
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.5;
+            }
+        }
+        
+        .voice-bar {
+            transition: height 0.1s ease-out;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8 max-w-6xl">
+        <!-- ヘッダー -->
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-indigo-900 mb-2">1on1 発話比率測定アプリ</h1>
+            <p class="text-gray-600">上司と部下の発話バランスを可視化</p>
+        </header>
+
+        <!-- メインコンテンツ -->
+        <div class="bg-white rounded-lg shadow-xl p-6 md:p-8 mb-6">
+            <!-- タブナビゲーション -->
+            <div class="flex border-b border-gray-200 mb-6">
+                <button id="tab-registration" class="tab-button px-6 py-3 font-semibold text-indigo-600 border-b-2 border-indigo-600">
+                    初回登録
+                </button>
+                <button id="tab-meeting" class="tab-button px-6 py-3 font-semibold text-gray-500 hover:text-indigo-600">
+                    1on1測定
+                </button>
+            </div>
+
+            <!-- 初回登録タブ -->
+            <div id="content-registration" class="tab-content">
+                <div class="max-w-2xl mx-auto">
+                    <h2 class="text-2xl font-bold text-gray-800 mb-4">上司の声を登録</h2>
+                    <p class="text-gray-600 mb-6">
+                        上司の声を登録することで、1on1中に上司と部下の発話を自動的に識別できます。<br>
+                        10秒程度、自然な声でお話しください。
+                    </p>
+
+                    <!-- 音声レベル表示 -->
+                    <div class="mb-6">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">音声レベル</label>
+                        <div class="h-8 bg-gray-200 rounded-full overflow-hidden">
+                            <div id="voice-level-register" class="voice-bar h-full bg-gradient-to-r from-green-400 to-green-600" style="width: 0%"></div>
+                        </div>
+                    </div>
+
+                    <!-- 登録ボタン -->
+                    <div class="flex gap-4 mb-6">
+                        <button id="btn-start-registration" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg transition duration-200">
+                            声の登録を開始
+                        </button>
+                        <button id="btn-stop-registration" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded-lg transition duration-200 hidden">
+                            登録を停止
+                        </button>
+                    </div>
+
+                    <!-- 登録状態表示 -->
+                    <div id="registration-status" class="bg-gray-100 rounded-lg p-4 mb-4 hidden">
+                        <p class="text-sm text-gray-700"></p>
+                    </div>
+
+                    <!-- 登録済み情報 -->
+                    <div id="registered-info" class="bg-green-50 border border-green-200 rounded-lg p-4 hidden">
+                        <h3 class="font-semibold text-green-800 mb-2">✓ 上司の声が登録されています</h3>
+                        <p class="text-sm text-green-700">登録日時: <span id="registration-date"></span></p>
+                        <button id="btn-clear-registration" class="mt-3 text-sm text-red-600 hover:text-red-800 underline">
+                            登録をクリア
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 1on1測定タブ -->
+            <div id="content-meeting" class="tab-content hidden">
+                <div class="max-w-4xl mx-auto">
+                    <h2 class="text-2xl font-bold text-gray-800 mb-4">1on1 測定</h2>
+                    
+                    <!-- 測定前の案内 -->
+                    <div id="meeting-info" class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                        <p class="text-sm text-blue-800">
+                            「1on1開始」ボタンを押すと測定が始まります。<br>
+                            会話が終わったら「1on1終了」ボタンを押してください。
+                        </p>
+                    </div>
+
+                    <!-- 未登録警告 -->
+                    <div id="warning-not-registered" class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6 hidden">
+                        <p class="text-sm text-yellow-800">
+                            ⚠️ 上司の声が登録されていません。先に「初回登録」タブで声を登録してください。
+                        </p>
+                    </div>
+
+                    <!-- 測定コントロール -->
+                    <div class="flex gap-4 mb-6">
+                        <button id="btn-start-meeting" class="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-4 px-8 rounded-lg transition duration-200 text-lg">
+                            📊 1on1開始
+                        </button>
+                        <button id="btn-stop-meeting" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-4 px-8 rounded-lg transition duration-200 text-lg hidden">
+                            ⏹️ 1on1終了
+                        </button>
+                    </div>
+
+                    <!-- 測定中表示 -->
+                    <div id="meeting-active" class="hidden">
+                        <!-- 録音中インジケーター -->
+                        <div class="bg-red-50 border border-red-300 rounded-lg p-4 mb-6 flex items-center">
+                            <span class="recording-indicator inline-block w-3 h-3 bg-red-500 rounded-full mr-3"></span>
+                            <span class="text-red-700 font-semibold">測定中...</span>
+                            <span id="meeting-timer" class="ml-auto text-gray-700 font-mono text-lg">00:00</span>
+                        </div>
+
+                        <!-- リアルタイム音声レベル -->
+                        <div class="grid grid-cols-2 gap-4 mb-6">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">上司の発話</label>
+                                <div class="h-6 bg-gray-200 rounded-full overflow-hidden">
+                                    <div id="voice-level-manager" class="voice-bar h-full bg-gradient-to-r from-blue-400 to-blue-600" style="width: 0%"></div>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">部下の発話</label>
+                                <div class="h-6 bg-gray-200 rounded-full overflow-hidden">
+                                    <div id="voice-level-member" class="voice-bar h-full bg-gradient-to-r from-orange-400 to-orange-600" style="width: 0%"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- リアルタイム発話時間 -->
+                        <div class="grid grid-cols-2 gap-4 mb-6">
+                            <div class="bg-blue-50 rounded-lg p-4 text-center">
+                                <p class="text-sm text-gray-600 mb-1">上司の発話時間</p>
+                                <p id="time-manager" class="text-2xl font-bold text-blue-600">0秒</p>
+                            </div>
+                            <div class="bg-orange-50 rounded-lg p-4 text-center">
+                                <p class="text-sm text-gray-600 mb-1">部下の発話時間</p>
+                                <p id="time-member" class="text-2xl font-bold text-orange-600">0秒</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 結果表示 -->
+                    <div id="meeting-result" class="hidden">
+                        <h3 class="text-xl font-bold text-gray-800 mb-4">測定結果</h3>
+                        
+                        <!-- 統計情報 -->
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                            <div class="bg-gray-50 rounded-lg p-4 text-center">
+                                <p class="text-sm text-gray-600 mb-1">総会話時間</p>
+                                <p id="result-total-time" class="text-xl font-bold text-gray-800">0秒</p>
+                            </div>
+                            <div class="bg-blue-50 rounded-lg p-4 text-center">
+                                <p class="text-sm text-gray-600 mb-1">上司の発話時間</p>
+                                <p id="result-manager-time" class="text-xl font-bold text-blue-600">0秒</p>
+                            </div>
+                            <div class="bg-orange-50 rounded-lg p-4 text-center">
+                                <p class="text-sm text-gray-600 mb-1">部下の発話時間</p>
+                                <p id="result-member-time" class="text-xl font-bold text-orange-600">0秒</p>
+                            </div>
+                        </div>
+
+                        <!-- 円グラフ -->
+                        <div class="bg-gray-50 rounded-lg p-6 mb-6">
+                            <h4 class="text-lg font-semibold text-gray-800 mb-4 text-center">発話比率</h4>
+                            <div class="max-w-md mx-auto">
+                                <canvas id="result-chart"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- アドバイス -->
+                        <div id="result-advice" class="rounded-lg p-4 mb-4">
+                            <!-- JavaScriptで動的に生成 -->
+                        </div>
+
+                        <!-- 新規測定ボタン -->
+                        <button id="btn-new-meeting" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg transition duration-200">
+                            新しい1on1を測定
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- フッター -->
+        <footer class="text-center text-gray-600 text-sm">
+            <p>© 2025 1on1 発話比率測定アプリ - より良い1on1のために</p>
+        </footer>
+    </div>
+
+    <!-- メインスクリプト -->
+    <script src="js/script.js"></script>
+</body>
+</html>
