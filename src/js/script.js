@@ -12,8 +12,8 @@ let audioContext = null;
 let analyser = null;
 let microphone = null;
 let microphoneStream = null; // マイクストリームの参照を保持
-let javascriptNode = null;
 let animationId = null;
+let audioProcessCallback = null; // 音声処理コールバック関数
 
 // 音声登録用
 let isRegistering = false;
@@ -195,16 +195,17 @@ async function initializeMicrophone() {
         analyser.fftSize = 2048;
         analyser.smoothingTimeConstant = 0.8;
         
-        javascriptNode = audioContext.createScriptProcessor(2048, 1, 1);
-        
+        // マイクをアナライザーに接続（destinationへの接続は不要）
         microphone.connect(analyser);
-        analyser.connect(javascriptNode);
-        javascriptNode.connect(audioContext.destination);
         
         console.log('✅ オーディオノードの接続が完了しました', {
             analyser,
-            javascriptNode
+            fftSize: analyser.fftSize,
+            frequencyBinCount: analyser.frequencyBinCount
         });
+        
+        // 音声処理ループを開始
+        startAudioProcessing();
         
         return stream;
     } catch (error) {
@@ -215,10 +216,43 @@ async function initializeMicrophone() {
 }
 
 /**
+ * 音声処理ループの開始
+ */
+function startAudioProcessing() {
+    console.log('🔄 音声処理ループを開始します...');
+    
+    function processAudio() {
+        if (!analyser || !audioProcessCallback) {
+            console.log('⏸️ 音声処理を停止します（analyserまたはcallbackが未設定）');
+            return;
+        }
+        
+        // コールバック関数を実行
+        audioProcessCallback();
+        
+        // 次のフレームで再度実行
+        animationId = requestAnimationFrame(processAudio);
+    }
+    
+    // 初回実行
+    processAudio();
+    console.log('✅ 音声処理ループを開始しました');
+}
+
+/**
  * マイクストリームの停止
  */
 function stopMicrophone() {
     console.log('🛑 マイクストリームを停止しています...');
+    
+    // 音声処理コールバックをクリア
+    audioProcessCallback = null;
+    
+    if (animationId) {
+        cancelAnimationFrame(animationId);
+        animationId = null;
+        console.log('✅ アニメーションフレームをキャンセルしました');
+    }
     
     if (microphoneStream) {
         microphoneStream.getTracks().forEach(track => {
@@ -226,11 +260,6 @@ function stopMicrophone() {
             console.log('✅ トラックを停止しました:', track);
         });
         microphoneStream = null;
-    }
-    
-    if (javascriptNode) {
-        javascriptNode.disconnect();
-        javascriptNode = null;
     }
     
     if (analyser) {
@@ -241,11 +270,6 @@ function stopMicrophone() {
     if (microphone) {
         microphone.disconnect();
         microphone = null;
-    }
-    
-    if (animationId) {
-        cancelAnimationFrame(animationId);
-        animationId = null;
     }
     
     console.log('✅ マイクストリームの停止が完了しました');
@@ -319,8 +343,8 @@ async function startVoiceRegistration() {
         document.getElementById('btn-stop-registration').classList.remove('hidden');
         document.getElementById('registration-status').classList.remove('hidden');
         
-        // 音声データの収集
-        javascriptNode.onaudioprocess = () => {
+        // 音声処理コールバックを設定
+        audioProcessCallback = () => {
             if (!isRegistering) return;
             
             const volume = getVolume();
@@ -496,8 +520,8 @@ async function startMeeting() {
         // タイマー開始
         meetingTimerInterval = setInterval(updateMeetingTimer, 1000);
         
-        // 音声データの処理
-        javascriptNode.onaudioprocess = () => {
+        // 音声処理コールバックを設定
+        audioProcessCallback = () => {
             if (!isMeeting) return;
             
             const now = Date.now();
