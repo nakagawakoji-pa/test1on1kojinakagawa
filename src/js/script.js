@@ -25,6 +25,19 @@ let lastSpeakingTime = {}; // 各話者の最後の発話時刻を追跡
 let speakerVoiceData = {}; // 話者の音声特徴データ（発話パターン分析用）
 let managerSpeakerIdCandidate = null; // 上司として識別されたスピーカーID
 
+// 話者識別のための定数
+const SPEAKER_IDENTIFICATION_CONFIG = {
+    MIN_UTTERANCES_REQUIRED: 3,           // 識別に必要な最低発話数
+    DURATION_SIMILARITY_THRESHOLD: 3000,   // 発話時間類似度の閾値（ミリ秒）
+    DURATION_SIMILARITY_WEIGHT: 40,        // 発話時間類似度のスコア重み（%）
+    FREQUENCY_THRESHOLD: 0.4,              // 発話頻度の閾値（40%以上）
+    FREQUENCY_SCORE: 30,                   // 発話頻度のスコア（点）
+    FIRST_SPEAKER_SCORE: 10,               // 最初の発話者へのスコア（点）
+    TEXT_LENGTH_THRESHOLD: 20,             // テキスト長の閾値（文字数）
+    TEXT_LENGTH_SCORE: 20,                 // テキスト長のスコア（点）
+    CONFIRMATION_THRESHOLD: 30             // 上司確定の閾値（点）
+};
+
 // LocalStorageキー
 const STORAGE_KEY_AZURE_SUBSCRIPTION = 'azure_subscription_key';
 const STORAGE_KEY_AZURE_REGION = 'azure_region';
@@ -737,12 +750,12 @@ function identifySpeaker(speakerId) {
     
     // まだ上司候補が確定していない場合、パターンマッチングで判定
     if (!managerSpeakerIdCandidate) {
-        // 十分なデータが集まるまで待つ（最低3発話）
+        // 十分なデータが集まるまで待つ（最低設定された発話数）
         const totalUtterances = Object.values(speakerVoiceData).reduce(
             (sum, data) => sum + data.utteranceCount, 0
         );
         
-        if (totalUtterances >= 3) {
+        if (totalUtterances >= SPEAKER_IDENTIFICATION_CONFIG.MIN_UTTERANCES_REQUIRED) {
             // 音声パターンを分析して上司を推定
             const speakers = Object.keys(speakerVoiceData);
             
@@ -764,27 +777,30 @@ function identifySpeaker(speakerId) {
                         const durationDiff = Math.abs(
                             pattern.averageDuration - registeredPattern.averageDuration
                         );
-                        const durationSimilarity = Math.max(0, 1 - (durationDiff / 3000)); // 3秒以内なら類似
-                        score += durationSimilarity * 40; // 40%の重み
+                        const durationSimilarity = Math.max(
+                            0, 
+                            1 - (durationDiff / SPEAKER_IDENTIFICATION_CONFIG.DURATION_SIMILARITY_THRESHOLD)
+                        );
+                        score += durationSimilarity * SPEAKER_IDENTIFICATION_CONFIG.DURATION_SIMILARITY_WEIGHT;
                         
                         console.log(`📊 [パターン分析] ${sid}: 発話時間類似度=${durationSimilarity.toFixed(2)}`);
                     }
                     
                     // 発話頻度（上司は一般的に多く話す傾向）
                     const utteranceRatio = pattern.utteranceCount / totalUtterances;
-                    if (utteranceRatio > 0.4) {
-                        score += 30; // 40%以上話している場合は上司の可能性が高い
+                    if (utteranceRatio > SPEAKER_IDENTIFICATION_CONFIG.FREQUENCY_THRESHOLD) {
+                        score += SPEAKER_IDENTIFICATION_CONFIG.FREQUENCY_SCORE;
                     }
                     
                     // 最初に話し始めたタイミング（わずかに考慮）
                     if (pattern.firstUtteranceTime === Math.min(...speakers.map(s => speakerVoiceData[s].firstUtteranceTime))) {
-                        score += 10;
+                        score += SPEAKER_IDENTIFICATION_CONFIG.FIRST_SPEAKER_SCORE;
                     }
                     
                     // テキストの長さ（上司は長めの説明をする傾向）
                     const avgTextLength = pattern.textSamples.reduce((sum, t) => sum + t.length, 0) / pattern.textSamples.length;
-                    if (avgTextLength > 20) {
-                        score += 20;
+                    if (avgTextLength > SPEAKER_IDENTIFICATION_CONFIG.TEXT_LENGTH_THRESHOLD) {
+                        score += SPEAKER_IDENTIFICATION_CONFIG.TEXT_LENGTH_SCORE;
                     }
                     
                     console.log(`📈 [スコア計算] ${sid}: 合計スコア=${score.toFixed(1)}`);
@@ -795,7 +811,7 @@ function identifySpeaker(speakerId) {
                     }
                 });
                 
-                if (bestMatch && bestScore > 30) { // 閾値30以上で確定
+                if (bestMatch && bestScore > SPEAKER_IDENTIFICATION_CONFIG.CONFIRMATION_THRESHOLD) {
                     managerSpeakerIdCandidate = bestMatch;
                     console.log('✅ ========== 上司を識別しました ==========');
                     console.log('👤 [識別完了] 上司のスピーカーID:', managerSpeakerIdCandidate);
@@ -810,7 +826,7 @@ function identifySpeaker(speakerId) {
                 managerSpeakerIdCandidate = speakers[0];
             }
         } else {
-            console.log('⏳ [データ収集中] 発話数:', totalUtterances, '/ 3（最低必要数）');
+            console.log('⏳ [データ収集中] 発話数:', totalUtterances, '/', SPEAKER_IDENTIFICATION_CONFIG.MIN_UTTERANCES_REQUIRED, '（最低必要数）');
         }
     }
     
