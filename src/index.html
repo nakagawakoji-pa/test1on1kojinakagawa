@@ -143,9 +143,12 @@
                 <div class="max-w-2xl mx-auto">
                     <h2 class="text-2xl font-bold text-gray-800 mb-4">上司の声を登録</h2>
                     <p class="text-gray-600 mb-6">
-                        上司の声を登録することで、1on1中に上司と部下の発話を自動的に識別できます。<br>
-                        Azure Speech Serviceの音声プロファイルを使用して、高精度な話者識別を実現します。<br>
-                        登録には約10秒程度かかります。自然な声でお話しください。
+                        ⚠️ <strong>現在のバージョンの制限事項:</strong><br>
+                        Azure Speech Serviceのダイアライゼーション機能の技術的制限により、
+                        登録された音声を使った話者識別は正確に動作しません。<br>
+                        <strong class="text-red-600">1on1測定時は、必ず上司から話し始めることで識別を行います。</strong><br>
+                        <br>
+                        このタブでの登録は現在、動作確認用途となっています。
                     </p>
 
                     <!-- Azure未設定の警告 -->
@@ -196,18 +199,22 @@
                     
                     <!-- 測定前の案内 -->
                     <div id="meeting-info" class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-                        <p class="text-sm text-blue-800">
-                            「1on1開始」ボタンを押すと測定が始まります。<br>
+                        <h3 class="font-semibold text-blue-800 mb-2">📋 測定開始前の重要な注意</h3>
+                        <p class="text-sm text-blue-800 mb-2">
+                            「1on1開始」ボタンを押した後、<strong class="text-red-600">必ず上司から話し始めてください</strong>。<br>
+                        </p>
+                        <p class="text-sm text-blue-700">
                             会話が終わったら「1on1終了」ボタンを押してください。
                         </p>
+                        <div class="mt-3 bg-yellow-50 border border-yellow-200 rounded px-3 py-2">
+                            <p class="text-xs text-yellow-800">
+                                ⚠️ 技術的制限: Azureのダイアライゼーション機能は発話順序でIDを割り当てるため、
+                                部下が先に話すと役割が逆転して記録されます。
+                            </p>
+                        </div>
                     </div>
 
-                    <!-- 未登録警告 -->
-                    <div id="warning-not-registered" class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6 hidden">
-                        <p class="text-sm text-yellow-800">
-                            ⚠️ 上司の声が登録されていません。先に「初回登録」タブで声を登録してください。
-                        </p>
-                    </div>
+                    <!-- 未登録警告は削除（登録不要なため） -->
 
                     <!-- 測定コントロール -->
                     <div class="flex gap-4 mb-6">
