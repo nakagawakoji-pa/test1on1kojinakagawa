@@ -24,6 +24,7 @@
 
     <script>
         // LocalStorageキー（実際のアプリと同じ）
+        // 注意: この定数は src/js/script.js の STORAGE_KEY_VOICE_PROFILE_ID と同期させる必要があります
         const STORAGE_KEY_VOICE_PROFILE_ID = 'azure_voice_profile_id';
 
         // identifySpeaker関数のシミュレーション（実際のコードから抽出）
@@ -32,6 +33,13 @@
             
             // LocalStorageから登録された上司のスピーカーIDを取得
             const registeredManagerId = localStorage.getItem(STORAGE_KEY_VOICE_PROFILE_ID);
+            
+            // 登録されていない場合は部下として扱う
+            if (!registeredManagerId) {
+                console.log('⚠️ [注意] 上司のスピーカーIDが登録されていません');
+                console.log('📌 [判定] 登録なし → 部下として識別');
+                return false;
+            }
             
             console.log('📋 [音声プロファイル照合]', {
                 現在の話者ID: speakerId,
