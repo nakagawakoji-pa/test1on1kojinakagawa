@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>音声プロファイル照合テスト</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 p-8">
+    <div class="max-w-4xl mx-auto bg-white rounded-lg shadow-lg p-8">
+        <h1 class="text-3xl font-bold text-indigo-900 mb-6">音声プロファイル照合ロジック テスト</h1>
+        
+        <div class="mb-6">
+            <h2 class="text-xl font-semibold mb-4">テスト結果</h2>
+            <div id="test-results" class="space-y-2"></div>
+        </div>
+        
+        <div class="mt-6">
+            <button id="run-tests" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg">
+                テストを実行
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // LocalStorageキー（実際のアプリと同じ）
+        // 注意: この定数は src/js/script.js の STORAGE_KEY_VOICE_PROFILE_ID と同期させる必要があります
+        const STORAGE_KEY_VOICE_PROFILE_ID = 'azure_voice_profile_id';
+
+        // identifySpeaker関数のシミュレーション（実際のコードから抽出）
+        function identifySpeaker(speakerId) {
+            console.log('🔍 [話者識別処理] スピーカーID:', speakerId);
+            
+            // LocalStorageから登録された上司のスピーカーIDを取得
+            const registeredManagerId = localStorage.getItem(STORAGE_KEY_VOICE_PROFILE_ID);
+            
+            // 登録されていない場合は部下として扱う
+            if (!registeredManagerId) {
+                console.log('⚠️ [注意] 上司のスピーカーIDが登録されていません');
+                console.log('📌 [判定] 登録なし → 部下として識別');
+                return false;
+            }
+            
+            console.log('📋 [音声プロファイル照合]', {
+                現在の話者ID: speakerId,
+                登録された上司ID: registeredManagerId,
+                照合処理: '実施中'
+            });
+            
+            // 登録されたスピーカーIDと現在の話者IDを照合
+            const isManager = (speakerId === registeredManagerId);
+            
+            console.log('✅ ========== 話者識別結果 ==========');
+            console.log('📌 [照合結果]', { 
+                スピーカーID: speakerId,
+                登録された上司のID: registeredManagerId,
+                IDの一致: isManager ? 'はい（上司）' : 'いいえ（部下）',
+                最終判定: isManager ? '上司' : '部下'
+            });
+            console.log('📌 [確認] 登録された音声プロファイルとの照合を実施しました');
+            console.log('=====================================');
+            
+            return isManager;
+        }
+
+        // テスト関数
+        function runTests() {
+            const resultsContainer = document.getElementById('test-results');
+            resultsContainer.innerHTML = '';
+            
+            let passedTests = 0;
+            let totalTests = 0;
+
+            function addTestResult(testName, passed, details) {
+                totalTests++;
+                if (passed) passedTests++;
+                
+                const resultDiv = document.createElement('div');
+                resultDiv.className = `p-4 rounded ${passed ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`;
+                resultDiv.innerHTML = `
+                    <div class="flex items-center">
+                        <span class="text-2xl mr-3">${passed ? '✅' : '❌'}</span>
+                        <div class="flex-1">
+                            <p class="font-semibold ${passed ? 'text-green-800' : 'text-red-800'}">${testName}</p>
+                            <p class="text-sm ${passed ? 'text-green-700' : 'text-red-700'}">${details}</p>
+                        </div>
+                    </div>
+                `;
+                resultsContainer.appendChild(resultDiv);
+            }
+
+            console.log('🧪 テストを開始します...');
+            console.log('=====================================\n');
+
+            // テスト1: 登録されたスピーカーIDと一致する場合
+            console.log('テスト1: 登録されたスピーカーIDと一致する場合');
+            localStorage.setItem(STORAGE_KEY_VOICE_PROFILE_ID, 'Guest-1');
+            const result1 = identifySpeaker('Guest-1');
+            const test1Passed = result1 === true;
+            addTestResult(
+                'テスト1: 登録されたスピーカーIDと一致する場合',
+                test1Passed,
+                `登録ID: Guest-1, 入力ID: Guest-1, 結果: ${result1 ? '上司' : '部下'} (期待値: 上司)`
+            );
+            console.log('\n');
+
+            // テスト2: 登録されたスピーカーIDと一致しない場合
+            console.log('テスト2: 登録されたスピーカーIDと一致しない場合');
+            localStorage.setItem(STORAGE_KEY_VOICE_PROFILE_ID, 'Guest-1');
+            const result2 = identifySpeaker('Guest-2');
+            const test2Passed = result2 === false;
+            addTestResult(
+                'テスト2: 登録されたスピーカーIDと一致しない場合',
+                test2Passed,
+                `登録ID: Guest-1, 入力ID: Guest-2, 結果: ${result2 ? '上司' : '部下'} (期待値: 部下)`
+            );
+            console.log('\n');
+
+            // テスト3: 複数の部下（異なるスピーカーID）
+            console.log('テスト3: 複数の部下（異なるスピーカーID）');
+            localStorage.setItem(STORAGE_KEY_VOICE_PROFILE_ID, 'Guest-1');
+            const result3a = identifySpeaker('Guest-2');
+            const result3b = identifySpeaker('Guest-3');
+            const test3Passed = result3a === false && result3b === false;
+            addTestResult(
+                'テスト3: 複数の部下（異なるスピーカーID）',
+                test3Passed,
+                `登録ID: Guest-1, 入力ID: Guest-2, Guest-3, 結果: 両方とも部下`
+            );
+            console.log('\n');
+
+            // テスト4: 上司が複数回話す（同じスピーカーID）
+            console.log('テスト4: 上司が複数回話す（同じスピーカーID）');
+            localStorage.setItem(STORAGE_KEY_VOICE_PROFILE_ID, 'Guest-1');
+            const result4a = identifySpeaker('Guest-1');
+            const result4b = identifySpeaker('Guest-1');
+            const test4Passed = result4a === true && result4b === true;
+            addTestResult(
+                'テスト4: 上司が複数回話す（同じスピーカーID）',
+                test4Passed,
+                `登録ID: Guest-1, 入力ID: Guest-1（2回）, 結果: 両方とも上司`
+            );
+            console.log('\n');
+
+            // テスト5: 会話の順番に関係なく識別
+            console.log('テスト5: 会話の順番に関係なく識別');
+            localStorage.setItem(STORAGE_KEY_VOICE_PROFILE_ID, 'Guest-1');
+            const result5a = identifySpeaker('Guest-2'); // 部下が先に話す
+            const result5b = identifySpeaker('Guest-1'); // 上司が後から話す
+            const test5Passed = result5a === false && result5b === true;
+            addTestResult(
+                'テスト5: 会話の順番に関係なく識別',
+                test5Passed,
+                `部下が先に話しても、上司が後から話しても正しく識別（部下→上司の順）`
+            );
+            console.log('\n');
+
+            // テスト6: 登録がない場合
+            console.log('テスト6: 登録がない場合');
+            localStorage.removeItem(STORAGE_KEY_VOICE_PROFILE_ID);
+            const result6 = identifySpeaker('Guest-1');
+            const test6Passed = result6 === false;
+            addTestResult(
+                'テスト6: 登録がない場合',
+                test6Passed,
+                `登録ID: なし, 入力ID: Guest-1, 結果: ${result6 ? '上司' : '部下'} (期待値: 部下)`
+            );
+            console.log('\n');
+
+            // テスト結果のサマリー
+            console.log('=====================================');
+            console.log('🎯 テスト結果サマリー');
+            console.log(`合格: ${passedTests}/${totalTests}`);
+            console.log(`成功率: ${((passedTests/totalTests)*100).toFixed(1)}%`);
+            console.log('=====================================');
+
+            // サマリーをUIに追加
+            const summaryDiv = document.createElement('div');
+            summaryDiv.className = `p-6 rounded mt-6 ${passedTests === totalTests ? 'bg-green-100 border-2 border-green-400' : 'bg-yellow-100 border-2 border-yellow-400'}`;
+            summaryDiv.innerHTML = `
+                <h3 class="text-xl font-bold mb-2 ${passedTests === totalTests ? 'text-green-800' : 'text-yellow-800'}">
+                    ${passedTests === totalTests ? '🎉 すべてのテストに合格しました！' : '⚠️ 一部のテストが失敗しました'}
+                </h3>
+                <p class="text-lg ${passedTests === totalTests ? 'text-green-700' : 'text-yellow-700'}">
+                    合格: ${passedTests}/${totalTests} (成功率: ${((passedTests/totalTests)*100).toFixed(1)}%)
+                </p>
+            `;
+            resultsContainer.appendChild(summaryDiv);
+
+            // LocalStorageをクリーンアップ
+            localStorage.removeItem(STORAGE_KEY_VOICE_PROFILE_ID);
+        }
+
+        // ボタンにイベントリスナーを設定
+        document.getElementById('run-tests').addEventListener('click', runTests);
+
+        // ページ読み込み時に自動実行
+        console.log('📄 テストページを読み込みました');
+        console.log('「テストを実行」ボタンをクリックしてテストを開始してください');
+    </script>
+</body>
+</html>

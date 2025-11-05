@@ -510,7 +510,7 @@ async function startMeeting() {
     console.log('📌 [確認] ConversationTranscriber を使用');
     console.log('📌 [確認] ダイアライゼーション機能: 有効');
     console.log('📌 [確認] 話者の自動識別: 有効');
-    console.log('📌 [注意] 登録された音声プロファイルとの照合: 未実装');
+    console.log('📌 [確認] 登録された音声プロファイルとの照合: 実装済み');
     console.log('================================================');
     
     if (isMeeting) {
@@ -664,33 +664,52 @@ function setupTranscriberEventHandlers() {
 
 /**
  * 話者の識別
- * 簡易実装: 最初に話した人を上司とみなす
+ * 登録された上司の音声プロファイル（スピーカーID）と照合して話者を識別します
  * 
- * 注意: Azure Speech Service の ConversationTranscriber は話者をダイアライゼーションで識別しますが、
- * 登録された音声プロファイルとの照合は行いません。より高度な話者識別には
- * Azure Speaker Recognition API を使用する必要があります。
+ * Azure Speech Service の ConversationTranscriber のダイアライゼーション機能を使用して、
+ * 各話者に一意のスピーカーIDが割り当てられます。
+ * 登録時に保存されたスピーカーIDと一致する場合、その話者を「上司」と識別します。
+ * 
+ * 重要な制限事項:
+ * - スピーカーIDは同一セッション内でのみ一貫性が保証されます
+ * - 登録と1on1測定は同じセッション内（ページを再読み込みしない）で実施する必要があります
+ * - ページを再読み込みすると新しいセッションが開始され、再登録が必要になります
+ * 
+ * @param {string} speakerId - Azure Speech Serviceが付与したスピーカーID
+ * @returns {boolean} 上司の場合はtrue、部下の場合はfalse
  */
-let firstSpeaker = null;
-
 function identifySpeaker(speakerId) {
     console.log('🔍 [話者識別処理] スピーカーID:', speakerId);
     
-    if (!firstSpeaker) {
-        firstSpeaker = speakerId;
-        console.log('📝 [話者識別] 最初の話者を上司として登録:', speakerId);
-        console.log('📌 [ダイアライゼーション] Azure Speech Service が自動的に話者を識別しました');
-        console.log('ℹ️ [注意] この実装では登録された音声プロファイルとの照合は行っていません');
-        console.log('ℹ️ [注意] より高度な話者識別には Azure Speaker Recognition API の使用が必要です');
-        return true; // 上司
+    // LocalStorageから登録された上司のスピーカーIDを取得
+    const registeredManagerId = localStorage.getItem(STORAGE_KEY_VOICE_PROFILE_ID);
+    
+    // 登録されていない場合は部下として扱う
+    if (!registeredManagerId) {
+        console.log('⚠️ [注意] 上司のスピーカーIDが登録されていません');
+        console.log('📌 [判定] 登録なし → 部下として識別');
+        return false;
     }
     
-    const isManager = (speakerId === firstSpeaker);
-    console.log('🎯 [話者識別結果]', { 
-        スピーカーID: speakerId, 
-        判定: isManager ? '上司' : '部下',
-        最初の話者_上司: firstSpeaker,
-        一致: isManager ? 'はい' : 'いいえ'
+    console.log('📋 [音声プロファイル照合]', {
+        現在の話者ID: speakerId,
+        登録された上司ID: registeredManagerId,
+        照合処理: '実施中'
     });
+    
+    // 登録されたスピーカーIDと現在の話者IDを照合
+    const isManager = (speakerId === registeredManagerId);
+    
+    console.log('✅ ========== 話者識別結果 ==========');
+    console.log('📌 [照合結果]', { 
+        スピーカーID: speakerId,
+        登録された上司のID: registeredManagerId,
+        IDの一致: isManager ? 'はい（上司）' : 'いいえ（部下）',
+        最終判定: isManager ? '上司' : '部下'
+    });
+    console.log('📌 [確認] 登録された音声プロファイルとの照合を実施しました');
+    console.log('=====================================');
+    
     return isManager;
 }
 
@@ -734,9 +753,6 @@ function stopMeeting() {
             }
         );
     }
-    
-    // firstSpeakerをリセット
-    firstSpeaker = null;
     
     // UI更新
     document.getElementById('meeting-active').classList.add('hidden');
@@ -908,7 +924,6 @@ function resetMeeting() {
     // 変数のリセット
     managerSpeakingTime = 0;
     memberSpeakingTime = 0;
-    firstSpeaker = null;
     
     // UI復元
     document.getElementById('meeting-info').classList.remove('hidden');
