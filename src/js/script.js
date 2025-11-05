@@ -467,10 +467,15 @@ function completeVoiceRegistration(speakerId) {
     const timestamp = Date.now();
     
     // 音声データの特徴も保存（発話パターン分析用）
+    // speakerIdがnullの場合に備えて安全にアクセス
+    const speakerPattern = speakerId && speakerVoiceData[speakerId] 
+        ? speakerVoiceData[speakerId] 
+        : {};
+    
     const voiceCharacteristics = JSON.stringify({
         speakerId: speakerId,
         registrationDate: timestamp,
-        speakerPattern: speakerVoiceData[speakerId] || {}
+        speakerPattern: speakerPattern
     });
     
     // LocalStorageに保存
@@ -483,7 +488,7 @@ function completeVoiceRegistration(speakerId) {
         保存されたスピーカーID: voiceProfileId,
         登録日時: new Date(timestamp).toLocaleString('ja-JP'),
         Azure_ダイアライゼーション使用: 'はい',
-        音声パターン記録: Object.keys(speakerVoiceData[speakerId] || {}).length + '件'
+        音声パターン記録: Object.keys(speakerPattern).length + '件'
     });
     console.log('=========================================');
     
@@ -767,12 +772,16 @@ function identifySpeaker(speakerId) {
                 let bestMatch = null;
                 let bestScore = -1;
                 
+                // パフォーマンス最適化: 最初の発話時刻を事前に計算
+                const earliestUtteranceTime = Math.min(...speakers.map(s => speakerVoiceData[s].firstUtteranceTime));
+                
                 speakers.forEach(sid => {
                     const pattern = speakerVoiceData[sid];
                     let score = 0;
                     
                     // 登録パターンとの類似度を評価
-                    if (registeredPattern && registeredPattern.averageDuration) {
+                    if (registeredPattern && registeredPattern.averageDuration && 
+                        typeof registeredPattern.averageDuration === 'number') {
                         // 平均発話時間の類似度
                         const durationDiff = Math.abs(
                             pattern.averageDuration - registeredPattern.averageDuration
@@ -793,14 +802,17 @@ function identifySpeaker(speakerId) {
                     }
                     
                     // 最初に話し始めたタイミング（わずかに考慮）
-                    if (pattern.firstUtteranceTime === Math.min(...speakers.map(s => speakerVoiceData[s].firstUtteranceTime))) {
+                    if (pattern.firstUtteranceTime === earliestUtteranceTime) {
                         score += SPEAKER_IDENTIFICATION_CONFIG.FIRST_SPEAKER_SCORE;
                     }
                     
                     // テキストの長さ（上司は長めの説明をする傾向）
-                    const avgTextLength = pattern.textSamples.reduce((sum, t) => sum + t.length, 0) / pattern.textSamples.length;
-                    if (avgTextLength > SPEAKER_IDENTIFICATION_CONFIG.TEXT_LENGTH_THRESHOLD) {
-                        score += SPEAKER_IDENTIFICATION_CONFIG.TEXT_LENGTH_SCORE;
+                    // 空配列チェックを追加
+                    if (pattern.textSamples && pattern.textSamples.length > 0) {
+                        const avgTextLength = pattern.textSamples.reduce((sum, t) => sum + t.length, 0) / pattern.textSamples.length;
+                        if (avgTextLength > SPEAKER_IDENTIFICATION_CONFIG.TEXT_LENGTH_THRESHOLD) {
+                            score += SPEAKER_IDENTIFICATION_CONFIG.TEXT_LENGTH_SCORE;
+                        }
                     }
                     
                     console.log(`📈 [スコア計算] ${sid}: 合計スコア=${score.toFixed(1)}`);
