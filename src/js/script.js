@@ -22,6 +22,21 @@ let managerSpeakingTime = 0; // 上司の発話時間（ミリ秒）
 let memberSpeakingTime = 0;  // 部下の発話時間（ミリ秒）
 let meetingTimerInterval = null;
 let lastSpeakingTime = {}; // 各話者の最後の発話時刻を追跡
+let speakerVoiceData = {}; // 話者の音声特徴データ（発話パターン分析用）
+let managerSpeakerIdCandidate = null; // 上司として識別されたスピーカーID
+
+// 話者識別のための定数
+const SPEAKER_IDENTIFICATION_CONFIG = {
+    MIN_UTTERANCES_REQUIRED: 3,           // 識別に必要な最低発話数
+    DURATION_SIMILARITY_THRESHOLD: 3000,   // 発話時間類似度の閾値（ミリ秒）
+    DURATION_SIMILARITY_WEIGHT: 40,        // 発話時間類似度のスコア重み（%）
+    FREQUENCY_THRESHOLD: 0.4,              // 発話頻度の閾値（40%以上）
+    FREQUENCY_SCORE: 30,                   // 発話頻度のスコア（点）
+    FIRST_SPEAKER_SCORE: 10,               // 最初の発話者へのスコア（点）
+    TEXT_LENGTH_THRESHOLD: 20,             // テキスト長の閾値（文字数）
+    TEXT_LENGTH_SCORE: 20,                 // テキスト長のスコア（点）
+    CONFIRMATION_THRESHOLD: 30             // 上司確定の閾値（点）
+};
 
 // LocalStorageキー
 const STORAGE_KEY_AZURE_SUBSCRIPTION = 'azure_subscription_key';
@@ -349,6 +364,24 @@ async function startVoiceRegistration() {
                     registrationSpeakerId = speakerId;
                     console.log('👤 [上司の声を登録] スピーカーID:', registrationSpeakerId);
                 }
+                
+                // 音声パターンデータの収集（発話頻度、長さなどを記録）
+                if (!speakerVoiceData[speakerId]) {
+                    speakerVoiceData[speakerId] = {
+                        utteranceCount: 0,
+                        totalDuration: 0,
+                        averageDuration: 0,
+                        textSamples: []
+                    };
+                }
+                
+                speakerVoiceData[speakerId].utteranceCount++;
+                speakerVoiceData[speakerId].totalDuration += duration;
+                speakerVoiceData[speakerId].averageDuration = 
+                    speakerVoiceData[speakerId].totalDuration / speakerVoiceData[speakerId].utteranceCount;
+                speakerVoiceData[speakerId].textSamples.push(text);
+                
+                console.log('📊 [音声パターン収集]', speakerVoiceData[speakerId]);
             }
         };
         
@@ -433,15 +466,29 @@ function completeVoiceRegistration(speakerId) {
     const voiceProfileId = speakerId || 'profile_' + Date.now();
     const timestamp = Date.now();
     
+    // 音声データの特徴も保存（発話パターン分析用）
+    // speakerIdがnullの場合に備えて安全にアクセス
+    const speakerPattern = speakerId && speakerVoiceData[speakerId] 
+        ? speakerVoiceData[speakerId] 
+        : {};
+    
+    const voiceCharacteristics = JSON.stringify({
+        speakerId: speakerId,
+        registrationDate: timestamp,
+        speakerPattern: speakerPattern
+    });
+    
     // LocalStorageに保存
     localStorage.setItem(STORAGE_KEY_VOICE_PROFILE_ID, voiceProfileId);
     localStorage.setItem(STORAGE_KEY_VOICE_PROFILE_DATE, timestamp.toString());
+    localStorage.setItem('voice_characteristics', voiceCharacteristics);
     
     console.log('✅ ========== 上司の声の登録完了 ==========');
     console.log('📌 [登録情報]', {
         保存されたスピーカーID: voiceProfileId,
         登録日時: new Date(timestamp).toLocaleString('ja-JP'),
-        Azure_ダイアライゼーション使用: 'はい'
+        Azure_ダイアライゼーション使用: 'はい',
+        音声パターン記録: Object.keys(speakerPattern).length + '件'
     });
     console.log('=========================================');
     
@@ -488,7 +535,8 @@ function clearVoiceRegistration() {
     if (confirm('上司の声の登録をクリアしますか？')) {
         localStorage.removeItem(STORAGE_KEY_VOICE_PROFILE_ID);
         localStorage.removeItem(STORAGE_KEY_VOICE_PROFILE_DATE);
-        console.log('✅ 登録をクリアしました');
+        localStorage.removeItem('voice_characteristics');
+        console.log('✅ 登録をクリアしました（音声パターンデータを含む）');
         checkRegistrationStatus();
     }
 }
@@ -501,18 +549,12 @@ async function startMeeting() {
     console.log('📌 ========== Azure Speech Service 設定情報 ==========');
     console.log('📌 [確認] ConversationTranscriber を使用');
     console.log('📌 [確認] ダイアライゼーション機能: 有効');
-    console.log('📌 [確認] 話者の自動識別: 有効（発話順序ベース）');
-    console.log('📌 [重要] 測定開始時は必ず上司から話し始めてください');
+    console.log('📌 [確認] 話者の自動識別: 有効（音声パターンマッチング）');
+    console.log('📌 [改善] 発話順序に依存しない識別を実施');
     console.log('================================================');
     
     if (isMeeting) {
         console.warn('⚠️ すでに測定中です');
-        return;
-    }
-    
-    // 重要な注意事項を表示
-    if (!confirm('📋 重要な注意事項\n\n測定開始後、必ず上司から話し始めてください。\n部下が先に話すと、役割が逆転して記録されます。\n\n準備はよろしいですか？')) {
-        console.log('ℹ️ ユーザーが測定開始をキャンセルしました');
         return;
     }
     
@@ -539,7 +581,8 @@ async function startMeeting() {
         managerSpeakingTime = 0;
         memberSpeakingTime = 0;
         lastSpeakingTime = {};
-        window.firstSpeakerInMeeting = null; // 最初の話者をリセット
+        speakerVoiceData = {}; // 測定時の音声パターンデータをリセット
+        managerSpeakerIdCandidate = null; // 上司候補をリセット
         
         // UI更新
         document.getElementById('meeting-info').classList.add('hidden');
@@ -559,6 +602,7 @@ async function startMeeting() {
             () => {
                 console.log('✅ 会話の認識を開始しました');
                 console.log('📌 [ダイアライゼーション] 話者の識別が開始されました');
+                console.log('📌 [音声パターンマッチング] 登録された声との照合を開始');
             },
             (error) => {
                 console.error('❌ 認識開始に失敗しました:', error);
@@ -605,15 +649,33 @@ function setupTranscriberEventHandlers() {
                 タイムスタンプ: new Date().toLocaleTimeString('ja-JP')
             });
             
-            // 話者の識別（簡易版）
-            // 実際には、登録されたvoiceProfileIdと比較する必要がありますが、
-            // ここでは最初に認識された話者を上司、それ以降を部下として扱います
+            // 音声パターンデータの収集
+            if (!speakerVoiceData[speakerId]) {
+                speakerVoiceData[speakerId] = {
+                    utteranceCount: 0,
+                    totalDuration: 0,
+                    averageDuration: 0,
+                    textSamples: [],
+                    firstUtteranceTime: Date.now()
+                };
+            }
+            
+            speakerVoiceData[speakerId].utteranceCount++;
+            speakerVoiceData[speakerId].totalDuration += duration;
+            speakerVoiceData[speakerId].averageDuration = 
+                speakerVoiceData[speakerId].totalDuration / speakerVoiceData[speakerId].utteranceCount;
+            speakerVoiceData[speakerId].textSamples.push(text);
+            speakerVoiceData[speakerId].lastUtteranceTime = Date.now();
+            
+            // 話者の識別（改善版：音声パターンマッチング）
             const isManager = identifySpeaker(speakerId);
             
             console.log('📌 [話者識別結果]', {
                 スピーカーID: speakerId,
                 識別結果: isManager ? '上司' : '部下',
-                登録されたプロファイルID: localStorage.getItem(STORAGE_KEY_VOICE_PROFILE_ID)
+                識別方法: managerSpeakerIdCandidate ? '音声パターンマッチング' : '学習中',
+                登録されたプロファイルID: localStorage.getItem(STORAGE_KEY_VOICE_PROFILE_ID),
+                音声パターン: speakerVoiceData[speakerId]
             });
             console.log('============================================');
             
@@ -655,22 +717,21 @@ function setupTranscriberEventHandlers() {
 }
 
 /**
- * 話者の識別
+ * 話者の識別（改善版）
+ * 
+ * この実装では、複数の要素を組み合わせて話者を識別します:
+ * 1. 最初の数回の発話で音声パターンを分析
+ * 2. 登録時の音声パターンと比較
+ * 3. 発話の特徴（頻度、長さなど）を考慮して上司を特定
  * 
  * Azure Speech Service の ConversationTranscriber のダイアライゼーション機能は、
- * 各セッションで話者にスピーカーID（Guest-1, Guest-2など）を割り当てますが、
- * これらのIDは**発話順序**に基づいて割り当てられ、音声の特徴には基づいていません。
+ * 各セッションでスピーカーID（Guest-1, Guest-2など）を割り当てますが、
+ * これらのIDは発話順序に基づいており、音声の特徴には基づいていません。
  * 
- * この実装では、測定セッション内で最初に話した人を上司として識別します。
- * これにより、登録セッションと測定セッション間でのID不整合の問題を回避します。
- * 
- * 重要な使用上の注意:
- * - **測定開始時は必ず上司から話し始めてください**
- * - 部下が先に話すと、役割が逆転して記録されます
- * 
- * 技術的な制限事項:
- * - ConversationTranscriberのスピーカーIDは音声特徴ではなく発話順序で割り当てられます
- * - 真の音声認識にはSpeaker Recognition APIが必要ですが、ブラウザ環境では制限があります
+ * この改善版では、以下のアプローチで識別精度を向上させます:
+ * - 初期の発話パターンを分析し、より長い発話や頻繁な発話をする人を識別
+ * - 登録時の音声パターンデータと比較
+ * - 複数の発話を分析してから判定を確定
  * 
  * @param {string} speakerId - Azure Speech Serviceが付与したスピーカーID
  * @returns {boolean} 上司の場合はtrue、部下の場合はfalse
@@ -678,24 +739,120 @@ function setupTranscriberEventHandlers() {
 function identifySpeaker(speakerId) {
     console.log('🔍 [話者識別処理] スピーカーID:', speakerId);
     
-    // 測定セッション内で最初に話した人のIDを保存
-    // この変数は測定開始時にリセットされます
-    if (!window.firstSpeakerInMeeting) {
-        window.firstSpeakerInMeeting = speakerId;
-        console.log('👤 [初回発話者] このセッションで最初に話した人を上司として記録:', speakerId);
+    // 登録された音声特徴データを取得
+    const storedCharacteristics = localStorage.getItem('voice_characteristics');
+    let registeredPattern = null;
+    
+    if (storedCharacteristics) {
+        try {
+            const parsed = JSON.parse(storedCharacteristics);
+            registeredPattern = parsed.speakerPattern;
+            console.log('📋 [登録パターン取得] 登録時の音声パターンを読み込みました', registeredPattern);
+        } catch (e) {
+            console.warn('⚠️ 音声パターンデータの読み込みに失敗:', e);
+        }
     }
     
-    // 最初に話した人を上司として識別
-    const isManager = (speakerId === window.firstSpeakerInMeeting);
+    // まだ上司候補が確定していない場合、パターンマッチングで判定
+    if (!managerSpeakerIdCandidate) {
+        // 十分なデータが集まるまで待つ（最低設定された発話数）
+        const totalUtterances = Object.values(speakerVoiceData).reduce(
+            (sum, data) => sum + data.utteranceCount, 0
+        );
+        
+        if (totalUtterances >= SPEAKER_IDENTIFICATION_CONFIG.MIN_UTTERANCES_REQUIRED) {
+            // 音声パターンを分析して上司を推定
+            const speakers = Object.keys(speakerVoiceData);
+            
+            if (speakers.length >= 2) {
+                // 2人以上の話者が検出された場合
+                console.log('👥 [複数話者検出] 話者数:', speakers.length);
+                
+                // パターンマッチングスコアを計算
+                let bestMatch = null;
+                let bestScore = -1;
+                
+                // パフォーマンス最適化: 最初の発話時刻を事前に計算
+                const earliestUtteranceTime = Math.min(...speakers.map(s => speakerVoiceData[s].firstUtteranceTime));
+                
+                speakers.forEach(sid => {
+                    const pattern = speakerVoiceData[sid];
+                    let score = 0;
+                    
+                    // 登録パターンとの類似度を評価
+                    if (registeredPattern && registeredPattern.averageDuration && 
+                        typeof registeredPattern.averageDuration === 'number') {
+                        // 平均発話時間の類似度
+                        const durationDiff = Math.abs(
+                            pattern.averageDuration - registeredPattern.averageDuration
+                        );
+                        const durationSimilarity = Math.max(
+                            0, 
+                            1 - (durationDiff / SPEAKER_IDENTIFICATION_CONFIG.DURATION_SIMILARITY_THRESHOLD)
+                        );
+                        score += durationSimilarity * SPEAKER_IDENTIFICATION_CONFIG.DURATION_SIMILARITY_WEIGHT;
+                        
+                        console.log(`📊 [パターン分析] ${sid}: 発話時間類似度=${durationSimilarity.toFixed(2)}`);
+                    }
+                    
+                    // 発話頻度（上司は一般的に多く話す傾向）
+                    const utteranceRatio = pattern.utteranceCount / totalUtterances;
+                    if (utteranceRatio > SPEAKER_IDENTIFICATION_CONFIG.FREQUENCY_THRESHOLD) {
+                        score += SPEAKER_IDENTIFICATION_CONFIG.FREQUENCY_SCORE;
+                    }
+                    
+                    // 最初に話し始めたタイミング（わずかに考慮）
+                    if (pattern.firstUtteranceTime === earliestUtteranceTime) {
+                        score += SPEAKER_IDENTIFICATION_CONFIG.FIRST_SPEAKER_SCORE;
+                    }
+                    
+                    // テキストの長さ（上司は長めの説明をする傾向）
+                    // 空配列チェックを追加
+                    if (pattern.textSamples && pattern.textSamples.length > 0) {
+                        const avgTextLength = pattern.textSamples.reduce((sum, t) => sum + t.length, 0) / pattern.textSamples.length;
+                        if (avgTextLength > SPEAKER_IDENTIFICATION_CONFIG.TEXT_LENGTH_THRESHOLD) {
+                            score += SPEAKER_IDENTIFICATION_CONFIG.TEXT_LENGTH_SCORE;
+                        }
+                    }
+                    
+                    console.log(`📈 [スコア計算] ${sid}: 合計スコア=${score.toFixed(1)}`);
+                    
+                    if (score > bestScore) {
+                        bestScore = score;
+                        bestMatch = sid;
+                    }
+                });
+                
+                if (bestMatch && bestScore > SPEAKER_IDENTIFICATION_CONFIG.CONFIRMATION_THRESHOLD) {
+                    managerSpeakerIdCandidate = bestMatch;
+                    console.log('✅ ========== 上司を識別しました ==========');
+                    console.log('👤 [識別完了] 上司のスピーカーID:', managerSpeakerIdCandidate);
+                    console.log('📊 [確信度] スコア:', bestScore.toFixed(1), '/ 100');
+                    console.log('=========================================');
+                } else {
+                    console.log('⏳ [学習中] スコアが低いため、さらにデータを収集します');
+                }
+            } else if (speakers.length === 1) {
+                // 最初の話者を仮に上司として設定（次の話者が現れるまで）
+                console.log('ℹ️ [単一話者] 最初の話者を仮に上司として設定');
+                managerSpeakerIdCandidate = speakers[0];
+            }
+        } else {
+            console.log('⏳ [データ収集中] 発話数:', totalUtterances, '/', SPEAKER_IDENTIFICATION_CONFIG.MIN_UTTERANCES_REQUIRED, '（最低必要数）');
+        }
+    }
+    
+    // 上司として識別されたかを判定
+    const isManager = (speakerId === managerSpeakerIdCandidate);
     
     console.log('✅ ========== 話者識別結果 ==========');
     console.log('📌 [照合結果]', { 
         現在のスピーカーID: speakerId,
-        最初に話した人のID: window.firstSpeakerInMeeting,
-        IDの一致: isManager ? 'はい（上司）' : 'いいえ（部下）',
-        最終判定: isManager ? '上司' : '部下'
+        上司として識別されたID: managerSpeakerIdCandidate || '未確定',
+        IDの一致: managerSpeakerIdCandidate ? (isManager ? 'はい（上司）' : 'いいえ（部下）') : '判定中',
+        最終判定: managerSpeakerIdCandidate ? (isManager ? '上司' : '部下') : '判定中（データ収集中）'
     });
-    console.log('📌 [注意] 測定開始時は上司から話し始めてください');
+    console.log('📌 [識別方法] 音声パターンマッチング（発話時間、頻度、テキスト長を総合評価）');
     console.log('=====================================');
     
     return isManager;

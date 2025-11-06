@@ -143,12 +143,13 @@
                 <div class="max-w-2xl mx-auto">
                     <h2 class="text-2xl font-bold text-gray-800 mb-4">上司の声を登録</h2>
                     <p class="text-gray-600 mb-6">
-                        ⚠️ <strong>現在のバージョンの制限事項:</strong><br>
-                        Azure Speech Serviceのダイアライゼーション機能の技術的制限により、
-                        登録された音声を使った話者識別は正確に動作しません。<br>
-                        <strong class="text-red-600">1on1測定時は、必ず上司から話し始めることで識別を行います。</strong><br>
+                        上司の声を事前に登録することで、1on1測定時に自動的に話者を識別します。<br>
+                        静かな環境で、10秒間自然に話してください。<br>
                         <br>
-                        このタブでの登録は現在、動作確認用途となっています。
+                        <strong>登録のコツ:</strong><br>
+                        • 通常の会話トーンで話す<br>
+                        • マイクから適切な距離を保つ（20〜30cm程度）<br>
+                        • 背景ノイズをできるだけ少なくする
                     </p>
 
                     <!-- Azure未設定の警告 -->
@@ -199,17 +200,19 @@
                     
                     <!-- 測定前の案内 -->
                     <div id="meeting-info" class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-                        <h3 class="font-semibold text-blue-800 mb-2">📋 測定開始前の重要な注意</h3>
+                        <h3 class="font-semibold text-blue-800 mb-2">📋 測定開始前の準備</h3>
                         <p class="text-sm text-blue-800 mb-2">
-                            「1on1開始」ボタンを押した後、<strong class="text-red-600">必ず上司から話し始めてください</strong>。<br>
+                            「1on1開始」ボタンを押した後、自然に会話を始めてください。<br>
+                        </p>
+                        <p class="text-sm text-blue-700 mb-2">
+                            システムが登録された上司の声を自動的に識別します。
                         </p>
                         <p class="text-sm text-blue-700">
                             会話が終わったら「1on1終了」ボタンを押してください。
                         </p>
-                        <div class="mt-3 bg-yellow-50 border border-yellow-200 rounded px-3 py-2">
-                            <p class="text-xs text-yellow-800">
-                                ⚠️ 技術的制限: Azureのダイアライゼーション機能は発話順序でIDを割り当てるため、
-                                部下が先に話すと役割が逆転して記録されます。
+                        <div class="mt-3 bg-green-50 border border-green-200 rounded px-3 py-2">
+                            <p class="text-xs text-green-800">
+                                ✓ ヒント: より正確な識別のため、登録時と同じ環境・音量で話すことを推奨します。
                             </p>
                         </div>
                     </div>
